@@ -8,6 +8,7 @@
 #include "POWERMGNT.h"
 #include "handset.h"
 #include "OTA.h"
+#include "deferred.h"
 
 #ifdef HAS_THERMAL
 #include "thermal.h"
@@ -26,7 +27,6 @@ extern void setWifiUpdateMode();
 extern void SetSyncSpam();
 extern uint8_t adjustPacketRateForBaud(uint8_t rate);
 extern uint8_t adjustSwitchModeForAirRate(OtaSwitchMode_e eSwitchMode, uint8_t packetSize);
-extern void deferExecution(uint32_t ms, std::function<void()> f);
 
 extern Display *display;
 
@@ -208,12 +208,26 @@ static void incrementValueIndex(bool init)
 {
     uint8_t values_count = values_max - values_min + 1;
     values_index = (values_index - values_min + 1) % values_count + values_min;
+    if (state_machine.getParentState() == STATE_PACKET)
+    {
+        while (get_elrs_airRateConfig(values_index)->interval < handset->getMinPacketInterval())
+        {
+            values_index = (values_index - values_min + 1) % values_count + values_min;
+        }
+    }
 }
 
 static void decrementValueIndex(bool init)
 {
     uint8_t values_count = values_max - values_min + 1;
     values_index = (values_index - values_min + values_count - 1) % values_count + values_min;
+    if (state_machine.getParentState() == STATE_PACKET)
+    {
+        while (get_elrs_airRateConfig(values_index)->interval < handset->getMinPacketInterval())
+        {
+            values_index = (values_index - values_min + values_count - 1) % values_count + values_min;
+        }
+    }
 }
 
 static void saveValueIndex(bool init)
@@ -228,7 +242,7 @@ static void saveValueIndex(bool init)
             // If the switch mode is going to change, block the change while connected
             if (newSwitchMode == OtaSwitchModeCurrent || connectionState == disconnected)
             {
-                deferExecution(100, [actualRate, newSwitchMode](){
+                deferExecutionMillis(100, [actualRate, newSwitchMode](){
                     config.SetRate(actualRate);
                     config.SetSwitchMode(newSwitchMode);
                     OtaUpdateSerializers((OtaSwitchMode_e)newSwitchMode, ExpressLRS_currAirRate_Modparams->PayloadLength);
@@ -242,7 +256,7 @@ static void saveValueIndex(bool init)
             // the pack and unpack functions are matched
             if (connectionState == disconnected)
             {
-                deferExecution(100, [val](){
+                deferExecutionMillis(100, [val](){
                     config.SetSwitchMode(val);
                     OtaUpdateSerializers((OtaSwitchMode_e)val, ExpressLRS_currAirRate_Modparams->PayloadLength);
                     SetSyncSpam();
@@ -254,7 +268,7 @@ static void saveValueIndex(bool init)
             config.SetAntennaMode(values_index);
             break;
         case STATE_TELEMETRY:
-            deferExecution(100, [val](){
+            deferExecutionMillis(100, [val](){
                 config.SetTlm(val);
                 SetSyncSpam();
             });
@@ -637,5 +651,10 @@ void jumpToWifiRunning()
 {
     state_machine.jumpTo(wifi_menu_fsm, STATE_WIFI_TX);
     state_machine.jumpTo(wifi_update_menu_fsm, STATE_WIFI_EXECUTE);
+}
+
+void jumpToBleRunning()
+{
+    state_machine.jumpTo(ble_menu_fsm, STATE_BLE_EXECUTE);
 }
 #endif

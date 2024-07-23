@@ -849,7 +849,11 @@ local function setLCDvar()
   if LCD_W == 480 then
     COL1 = 3
     COL2 = 240
-    maxLineIndex = 10
+    if LCD_H == 320 then
+      maxLineIndex = 12
+    else
+      maxLineIndex = 10
+    end
     textYoffset = 10
     textSize = 22 --textSize is text Height
   elseif LCD_W == 320 then
@@ -864,8 +868,12 @@ local function setLCDvar()
     else
       COL2 = 70
     end
+    if LCD_H == 96 then
+      maxLineIndex = 9
+    else
+      maxLineIndex = 6
+    end
     COL1 = 0
-    maxLineIndex = 6
     textYoffset = 3
     textSize = 8
   end
@@ -883,6 +891,42 @@ local function setMock()
   deviceIsELRS_TX = true
 end
 
+local function checkCrsfModule()
+  -- Loop through the modules and look for one set to CRSF (5)
+  for modIdx = 0, 1 do
+    local mod = model.getModule(modIdx)
+    if mod and mod.Type == 5 then
+      -- CRSF found
+      checkModuleEnabled = nil
+      return 0
+    end
+  end
+
+  -- No CRSF module found, save an error message for run()
+  lcd.clear()
+  local y = 0
+  lcd.drawText(2, y, "  No ExpressLRS", MIDSIZE)
+  y = y + (textSize * 2) - 2
+  local msgs = {
+    " Enable a CRSF Internal",
+    "   or External module in",
+    "       Model settings",
+    "  If module is internal",
+    " also set Internal RF to",
+    " CRSF in SYS->Hardware",
+  }
+  for i, msg in ipairs(msgs) do
+    lcd.drawText(2, y, msg)
+    y = y + textSize
+    if i == 3 then
+      lcd.drawLine(0, y, LCD_W, y, SOLID, INVERS)
+      y = y + 2
+    end
+  end
+
+  return 0
+end
+
 -- Init
 local function init()
   setLCDvar()
@@ -893,10 +937,8 @@ end
 
 -- Main
 local function run(event, touchState)
-  if event == nil then
-    error("Cannot be run as a model script!")
-    return 2
-  end
+  if event == nil then return 2 end
+  if checkCrsfModule then return checkCrsfModule() end
 
   local forceRedraw = refreshNext()
 
